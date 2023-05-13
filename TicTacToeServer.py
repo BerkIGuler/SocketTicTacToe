@@ -26,9 +26,10 @@ class GameAdmin:
         command = self._receive_command()
         cmd_type = HTTPParser(command).get_json_content()["type"]
         if cmd_type == "join":
-
+            pass
 
     def respond_symbol_and_id(self):
+        pass
 
     def _receive_command(self):
         if self.client_socket:
