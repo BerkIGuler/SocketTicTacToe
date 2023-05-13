@@ -1,25 +1,27 @@
+import logging
 import socket
 import consts
 
-from parsers import parse_port
+from parsers import parse_port, HTTPParser
 from config import player_config, update_args
-from utils import HTTPParser
+from utils import TicTacToeHTTPCommand
+from logger import get_module_logger
 
 
 class Player:
-    def __init__(self, name, logger):
+    def __init__(self, name, logger, tcp_cfg):
         """connect to the ttt server"""
         self.logger = logger
         self.name = name
+        self.tcp_cfg = tcp_cfg
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.logger.info(f"Player {name} online")
 
-    def join(self, tcp_cfg):
+    def join(self):
         try:
-            self.socket.connect((tcp_cfg.ip, tcp_cfg.port))
+            self.socket.connect((self.tcp_cfg.ip, self.tcp_cfg.port))
             self.logger.info(f"Player sent join request!!")
             message = TicTacToeHTTPCommand().join_request(
-                p_name=self.name, ip=tcp_config.ip
+                p_name=self.name, ip=self.tcp_cfg.ip
             )
             self.socket.sendall(message)
         except Exception as e:
@@ -27,6 +29,7 @@ class Player:
         response = self._receive_symbol()
         content = HTTPParser(response).get_content()
         print(type(content))
+        print(content)
 
     def _receive_symbol(self):
         response = b""
@@ -38,51 +41,17 @@ class Player:
         return response
 
 
-class TicTacToeHTTPCommand():
-    join_request_body = {
-        "type": "",
-        "player_name": "",
-    }
-
-    base_http_post = "POST / HTTP/1.1\r\n" \
-                     + "Host: {ip}\r\n"\
-                     + "Content-Type: application/json\r\n"\
-                     + "Content-Length: {con_len}\r\n\r\n"
-
-    base_http_get = "GET / HTTP/1.1\r\n" \
-                    + "Host: {ip}\r\n" \
-                    + "Accept: application/json\r\n\r\n"
-
-    def __init__(self):
-        self.type = type
-
-    def join_request(self, p_name, ip):
-        body = self.join_request_body.copy()
-        body["player_name"] = p_name
-        body["type"] = "join"
-        body_len = len(body)
-
-        headers = self.base_http_post
-        headers = headers.format(**{"ip": ip, "con_len": body_len})
-        http_request = headers + body
-
-        return http_request
-
-
 if __name__ == "__main__":
-    pass
+    logger = get_module_logger(
+        __name__,
+        log_level=logging.INFO,
+        file_path="./logs/client.log"
+    )
     # port = parse_port()
-    # update_args(tcp_config, **{"port": port})
-    # print(tcp_config)
+    # update_args(player_config, **{"port": port})
 
-    # base_http_post = "POST / HTTP/1.1\r\n" \
-    #                  + "Host: {ip}\r\n"\
-    #                  + "Content-Type: application/json"\
-    #                  + "Content-Length: 80"
-    # print(base_http_post.format(**{"ip": 122}))
-
-    # http_command = TicTacToeHTTPCommand(type="test")
-    # http_command.create_join_request("ronaldo", "1.2.3.4")
+    player_1 = Player(name="Berkay", logger=logger, tcp_cfg=player_config)
+    player_1.join()
 
 
 
