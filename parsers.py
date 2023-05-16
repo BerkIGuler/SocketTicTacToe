@@ -34,7 +34,7 @@ class HTTPParser:
             content = None
 
         if content:
-            return json.load(content)
+            return json.loads(content)
 
     def check_content_len(self):
         content_len = self._get_header_val(search_key="Content-Length")
