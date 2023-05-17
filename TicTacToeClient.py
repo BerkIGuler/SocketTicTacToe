@@ -7,6 +7,7 @@ from config import player_config, update_args, sample_name
 from utils import TicTacToeHTTPCommand
 from logger import get_module_logger
 from TicTacToeServer import TicTacToe
+import consts
 
 
 class Player:
@@ -38,34 +39,55 @@ class Player:
             self.p_id = content["player_id"]
             self.p_sym = content["player_sym"]
         self.logger.info(f"{self.name} joined the game with id {self.p_id} and symbol {self.p_sym}")
-        self.logger.info(f"Waiting for the game to start...")
+        self.logger.info(f"Game starts...")
 
     def play(self):
+        other_id = "1" if self.p_id == "0" else "0"
         while True:
             response = self._receive_symbol()
             content = HTTPParser(response).get_json_content()
             if content["type"] == "your_turn":
                 self._validate_turn(content)
+                print("Turn information: Your Turn!")
+                print("State of the board")
+
                 board_state = content["board_state"]
                 board = TicTacToe.decode(board_state)
                 print(board)
+
                 row, col = self._get_user_input()
-                self._send_move(row, col)
+                if col is not None:
+                    self._send_move(row, col)
+                else:
+                    assert row == consts.STATUS
+                    self._request_status()
 
             elif content["type"] == "wait_turn":
+                self._validate_turn(content)
+                print(f"Turn information: Player {other_id}'s turn!"
+                      + f" (Wait for player {other_id}'s move)")
+                print("State of the board")
+
                 board_state = content["board_state"]
                 board = TicTacToe.decode(board_state)
                 print(board)
-                print("Wait for your turn...")
+
+    def _request_status(self):
+        msg = TicTacToeHTTPCommand().status_request(self.tcp_cfg.ip)
+        self.socket.sendall(msg)
 
     @staticmethod
     def _get_user_input():
-        user_input = input("Enter your move in x,y format:")
+        user_input = input("Enter your move in x,y format or type status to request game info:")
         try:
             row, col = map(int, user_input.split(","))
+            vals = row, col
         except Exception as e:
-            raise e
-        return row, col
+            if user_input.strip() == "status":
+                vals = consts.STATUS, None
+            else:
+                raise ValueError(f"Received an unexpected input while handling {e}")
+        return vals
 
     def _validate_turn(self, msg):
         assert msg["sym"] == self.p_sym

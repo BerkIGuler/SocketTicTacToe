@@ -1,5 +1,8 @@
 
 
+HTTP_STATUS = {200: "OK", 400: "Bad Request"}
+
+
 class TicTacToeHTTPCommand:
 
     base_http_post = "POST HTTP/1.1\r\n" \
@@ -80,5 +83,35 @@ class TicTacToeHTTPCommand:
         http_request = headers + body
 
         return http_request
+
+    def status_request(self, ip):
+        body = '{"type": "status"}'
+        body = body.encode(encoding="utf-8")
+        body_len = len(body)
+
+        headers = self.base_http_post
+        headers = headers.format(
+            **{"ip": ip, "con_len": body_len}
+        ).encode(encoding="utf-8")
+        http_request = headers + body
+
+        return http_request
+
+    def validate_move(self, description, status_code):
+        body = '{"type": "move_status", "desc": "' + description + '"}'
+        body = body.encode(encoding="utf-8")
+        body_len = len(body)
+
+        headers = self.base_http_response
+        headers = headers.format(
+            **{"status_code": status_code,
+               "status_msg": HTTP_STATUS[status_code],
+               "con_len": body_len}
+        ).encode(encoding="utf-8")
+        http_request = headers + body
+
+        return http_request
+
+
 
 

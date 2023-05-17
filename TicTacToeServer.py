@@ -13,14 +13,16 @@ import threading
 
 
 class GameAdmin:
-    current_players = []
 
     def __init__(self, tcp_config, logger):
         self.logger = logger
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.bind((tcp_config.ip, tcp_config.port))
+
         self.client_sockets = []
         self.client_addrs = []
+        self.client_names = []
+
         self.current_turn = random.choice(["X", "O"])
         self.ttt = TicTacToe()
 
@@ -37,7 +39,8 @@ class GameAdmin:
             client_thread.start()
 
     def handle_client(self, client_socket, client_addr):
-        assigned = False
+        pid = None
+        sym = None
 
         try:
             if len(self.client_sockets) > 1:
@@ -50,37 +53,55 @@ class GameAdmin:
                 assert msg["type"] == "join", "must receive join request first"
                 p_name = msg["player_name"]
 
-                # add the new client to current lists
                 self.client_sockets.append(client_socket)
                 self.client_addrs.append(client_addr)
+                self.client_names.append(p_name)
 
                 while True:
-                    if len(self.client_sockets) == 2 \
-                            and client_socket in self.client_sockets \
-                            and not assigned:
-                        assigned = True
+                    if len(self.client_sockets) == 2 and pid is None:
                         self._notify_client(client_socket, p_name)
+                        self.logger.info(f"Game is starting for {p_name}.")
+                        pid, sym = self._get_ip_and_sym(client_socket)
 
-                    if assigned:
-                        self._start_the_game(
-                            client_socket,
-                            client_addr,
-                            p_name)
+                    # both players were notified of their symbols and IDs
+                    if pid is not None:
+                        self._next_round(pid, sym)
 
         except Exception as e:
             self.logger.error(f"Error while handling client: {e}")
         finally:
             client_socket.close()
 
-    def _start_the_game(self, client_socket, client_addr, name):
-        self._send_turn(client_socket, client_addr, name)
-        msg = self._receive_command(client_socket)
-        msg = HTTPParser(msg).get_json_content()
-        if self._valid_move(client_socket, msg):
-            self._update_board(msg, client_socket)
-        else:
-            # self._send_invalid_move_msg()
-            pass
+    def _next_round(self, pid, sym):
+        my_turn = self.current_turn == sym
+
+        if my_turn:
+            if pid == 0:
+                self._send_turn(pid=0, your_turn=True)
+                self._send_turn(pid=1, your_turn=False)
+            elif pid == 1:
+                self._send_turn(pid=1, your_turn=True)
+                self._send_turn(pid=0, your_turn=False)
+
+            p_name = self.client_names[pid]
+            self.logger.info(f"Waiting for {p_name}'s move...")
+            msg = self._receive_command(self.client_sockets[pid])
+            msg = HTTPParser(msg).get_json_content()
+            if self._valid_move(self.client_sockets[pid], msg):
+                self._update_board(msg, self.client_sockets[pid])
+                self.current_turn = "X" if self.current_turn == "O" else "O"
+                self._send_validation_move(pid, desc="Good one!", s_code=200)
+            else:
+                self._send_validation_move(
+                    pid, desc="Bad move... Send another ;)", s_code=400
+                )
+
+    def _send_validation_move(self, pid, desc, s_code=200):
+        client_socket = self.client_sockets[pid]
+        client_socket.sendall(TicTacToeHTTPCommand().validate_move(
+            description=desc,
+            status_code=s_code
+        ))
 
     def _notify_client(self, client_socket, p_name):
         p_id, symbol = self._get_ip_and_sym(client_socket)
@@ -89,27 +110,16 @@ class GameAdmin:
                          f"{p_name}")
         client_socket.sendall(http_resp)
 
-    def _send_turn(self, client_socket, client_addr, name):
-        client_ip = client_addr[0]
-        p_id, symbol = self._get_ip_and_sym(client_socket)
-
-        if symbol == self.current_turn:
-            msg = TicTacToeHTTPCommand().turn(
-                client_ip, p_id, symbol,
-                board_state=TicTacToe.encode(self.ttt.board),
-                your_turn=True
-            )
-            client_socket.sendall(msg)
-        else:
-            msg = TicTacToeHTTPCommand().turn(
-                client_ip, p_id, symbol,
-                board_state=TicTacToe.encode(self.ttt.board),
-                your_turn=False
-            )
-            client_socket.sendall(msg)
-
-        # self.current_turn = "X" if self.current_turn == "O" else "O"
-        self.logger.info(f"Sent board info to {name}")
+    def _send_turn(self, pid, your_turn=False):
+        client_socket = self.client_sockets[pid]
+        client_addr = self.client_sockets[pid]
+        client_socket.sendall(TicTacToeHTTPCommand().turn(
+            client_addr[0],
+            self._get_ip_and_sym(client_socket)[0],
+            self._get_ip_and_sym(client_socket)[1],
+            board_state=TicTacToe.encode(self.ttt.board),
+            your_turn=your_turn
+        ))
 
     def _valid_move(self, client_socket, msg):
         valid = False
