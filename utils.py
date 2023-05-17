@@ -43,3 +43,42 @@ class TicTacToeHTTPCommand:
 
         return http_request
 
+    def turn(self, ip, id, sym, board_state, your_turn=False):
+        if your_turn:
+            turn_info = "your_turn"
+        else:
+            turn_info = "wait_turn"
+
+        body = '{"type": "' + turn_info + '", ' \
+               + '"id": "' + str(id) + '", ' \
+               + '"sym": "' + sym + '", ' \
+               + '"board_state": "' + board_state + '"}' \
+
+        body = body.encode(encoding="utf-8")
+        body_len = len(body)
+
+        headers = self.base_http_post
+        headers = headers.format(
+            **{"ip": ip, "con_len": body_len}
+        ).encode(encoding="utf-8")
+        http_request = headers + body
+
+        return http_request
+
+    def move(self, row, col, p_id, ip):
+        body = '{"type": "move", ' \
+               + '"id": "' + str(p_id) + '", ' \
+               + '"row": "' + str(row) + '", ' \
+               + '"col": "' + str(col) + '"}'
+        body = body.encode(encoding="utf-8")
+        body_len = len(body)
+
+        headers = self.base_http_post
+        headers = headers.format(
+            **{"ip": ip, "con_len": body_len}
+        ).encode(encoding="utf-8")
+        http_request = headers + body
+
+        return http_request
+
+
