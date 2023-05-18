@@ -1,9 +1,8 @@
 import logging
 import socket
-import consts
 
-from parsers import parse_port, HTTPParser
-from config import player_config, update_args, sample_name
+from parsers import HTTPParser
+from config import player_config, sample_name
 from utils import TicTacToeHTTPCommand
 from logger import get_module_logger
 from TicTacToeServer import TicTacToe
@@ -89,17 +88,22 @@ class Player:
         msg = TicTacToeHTTPCommand().status_request(self.tcp_cfg.ip)
         self.socket.sendall(msg)
 
-    @staticmethod
-    def _get_user_input():
-        user_input = input("Enter your move in x,y format or type status to request game info:")
-        try:
-            row, col = map(int, user_input.split(","))
-            vals = row, col
-        except Exception as e:
-            if user_input.strip() == "status":
-                vals = consts.STATUS, None
-            else:
-                raise ValueError(f"Received an unexpected input while handling {e}")
+    def _get_user_input(self):
+        success = False
+        vals = None
+        while not success:
+            success = True
+            user_input = input("Enter your move in x,y format or type status to request game info:")
+            try:
+                row, col = map(int, user_input.split(","))
+                vals = row, col
+            except Exception as e:
+                if user_input.strip() == "status":
+                    vals = consts.STATUS, None
+                else:
+                    print("Invalid move")
+                    self.logger.error(e)
+                    success = False
         return vals
 
     def _validate_turn(self, msg):
