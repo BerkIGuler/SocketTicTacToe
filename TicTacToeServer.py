@@ -69,6 +69,7 @@ class GameAdmin:
 
         except Exception as e:
             self.logger.error(f"Error while handling client: {e}")
+            raise e
         finally:
             client_socket.close()
 
@@ -83,18 +84,21 @@ class GameAdmin:
                 self._send_turn(pid=1, your_turn=True)
                 self._send_turn(pid=0, your_turn=False)
 
-            p_name = self.client_names[pid]
-            self.logger.info(f"Waiting for {p_name}'s move...")
-            msg = self._receive_command(self.client_sockets[pid])
-            msg = HTTPParser(msg).get_json_content()
-            if self._valid_move(self.client_sockets[pid], msg):
-                self._update_board(msg, self.client_sockets[pid])
-                self.current_turn = "X" if self.current_turn == "O" else "O"
-                self._send_validation_move(pid, desc="Good one!", s_code=200)
-            else:
-                self._send_validation_move(
-                    pid, desc="Bad move... Send another ;)", s_code=400
-                )
+            current_turn = True
+            while current_turn:
+                p_name = self.client_names[pid]
+                self.logger.info(f"Waiting for {p_name}'s move...")
+                msg = self._receive_command(self.client_sockets[pid])
+                msg = HTTPParser(msg).get_json_content()
+                if self._valid_move(self.client_sockets[pid], msg):
+                    self._update_board(msg, self.client_sockets[pid])
+                    self.current_turn = "X" if self.current_turn == "O" else "O"
+                    self._send_validation_move(pid, desc="Good one!", s_code=200)
+                    current_turn = False
+                else:
+                    self._send_validation_move(
+                        pid, desc="Bad move... Send another ;)", s_code=400
+                    )
 
     def _send_validation_move(self, pid, desc, s_code=200):
         client_socket = self.client_sockets[pid]
@@ -112,7 +116,7 @@ class GameAdmin:
 
     def _send_turn(self, pid, your_turn=False):
         client_socket = self.client_sockets[pid]
-        client_addr = self.client_sockets[pid]
+        client_addr = self.client_addrs[pid]
         client_socket.sendall(TicTacToeHTTPCommand().turn(
             client_addr[0],
             self._get_ip_and_sym(client_socket)[0],

@@ -45,7 +45,8 @@ class Player:
         other_id = "1" if self.p_id == "0" else "0"
         while True:
             response = self._receive_symbol()
-            content = HTTPParser(response).get_json_content()
+            http_parser = HTTPParser(response)
+            content = http_parser.get_json_content()
             if content["type"] == "your_turn":
                 self._validate_turn(content)
                 print("Turn information: Your Turn!")
@@ -71,6 +72,18 @@ class Player:
                 board_state = content["board_state"]
                 board = TicTacToe.decode(board_state)
                 print(board)
+
+            elif content["type"] == "move_status":
+                status_code = http_parser.get_status()
+                desc = content["desc"]
+                if status_code == "400":
+                    print(desc)
+                    row, col = self._get_user_input()
+                    if col is not None:
+                        self._send_move(row, col)
+                    else:
+                        assert row == consts.STATUS
+                        self._request_status()
 
     def _request_status(self):
         msg = TicTacToeHTTPCommand().status_request(self.tcp_cfg.ip)

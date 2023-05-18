@@ -65,6 +65,15 @@ class HTTPParser:
 
         return val
 
+    def get_status(self):
+        try:
+            lines = self.http_message.split("\r\n")
+            status_code = lines[0].split()[1]
+        except:
+            status_code = None
+
+        return status_code
+
 
 def parse_port():
     """return port parsed from cli"""
