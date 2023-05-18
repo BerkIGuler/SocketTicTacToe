@@ -90,15 +90,20 @@ class GameAdmin:
                 self.logger.info(f"Waiting for {p_name}'s move...")
                 msg = self._receive_command(self.client_sockets[pid])
                 msg = HTTPParser(msg).get_json_content()
-                if self._valid_move(self.client_sockets[pid], msg):
-                    self._update_board(msg, self.client_sockets[pid])
-                    self.current_turn = "X" if self.current_turn == "O" else "O"
-                    self._send_validation_move(pid, desc="Good one!", s_code=200)
-                    current_turn = False
-                else:
-                    self._send_validation_move(
-                        pid, desc="Bad move... Send another ;)", s_code=400
-                    )
+
+                if msg["type"] == "status":
+                    self._send_turn(pid=pid, your_turn=True)
+
+                elif msg["type"] == "move":
+                    if self._valid_move(self.client_sockets[pid], msg):
+                        self._update_board(msg, self.client_sockets[pid])
+                        self.current_turn = "X" if self.current_turn == "O" else "O"
+                        self._send_validation_move(pid, desc="Good one!", s_code=200)
+                        current_turn = False
+                    else:
+                        self._send_validation_move(
+                            pid, desc="You should provide an unoccupied valid entry!", s_code=400
+                        )
 
     def _send_validation_move(self, pid, desc, s_code=200):
         client_socket = self.client_sockets[pid]

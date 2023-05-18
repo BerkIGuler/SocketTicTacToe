@@ -83,6 +83,11 @@ class Player:
                     else:
                         assert row == consts.STATUS
                         self._request_status()
+                elif status_code != "200":
+                    raise ValueError("Status code must be either 200 OK or 400 Bad Request")
+
+            elif content["type"] == "move_status":
+                pass
 
     def _request_status(self):
         msg = TicTacToeHTTPCommand().status_request(self.tcp_cfg.ip)
