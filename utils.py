@@ -112,6 +112,20 @@ class TicTacToeHTTPCommand:
 
         return http_request
 
+    def result(self, win_info, ip):
+        body = '{"type": "result", ' \
+               + '"win_info": "' + str(win_info) + '"}'
+        body = body.encode(encoding="utf-8")
+        body_len = len(body)
+
+        headers = self.base_http_post
+        headers = headers.format(
+            **{"ip": ip, "con_len": body_len}
+        ).encode(encoding="utf-8")
+        http_request = headers + body
+
+        return http_request
+
 
 
 

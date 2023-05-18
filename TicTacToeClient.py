@@ -86,8 +86,13 @@ class Player:
                 elif status_code != "200":
                     raise ValueError("Status code must be either 200 OK or 400 Bad Request")
 
-            elif content["type"] == "move_status":
-                pass
+            elif content["type"] == "result":
+                if content["win_info"] == "win":
+                    print("Congratulations... you won!")
+                elif content["win_info"] == "lost":
+                    print("Sorry... you lost!")
+                elif content["win_info"] == "tie":
+                    print("It's a tie!!")
 
     def _request_status(self):
         msg = TicTacToeHTTPCommand().status_request(self.tcp_cfg.ip)

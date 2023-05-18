@@ -13,6 +13,7 @@ import threading
 
 
 class GameAdmin:
+    game_over = False
 
     def __init__(self, tcp_config, logger):
         self.logger = logger
@@ -33,6 +34,9 @@ class GameAdmin:
         while True:
             client_socket, client_addr = self.socket.accept()
             self.logger.info(f"New connection from {client_addr}")
+
+            if self.game_over:
+                self.game_over = False
 
             # Start a new thread to handle the client
             client_thread = threading.Thread(target=self.handle_client, args=(client_socket, client_addr))
@@ -57,7 +61,7 @@ class GameAdmin:
                 self.client_addrs.append(client_addr)
                 self.client_names.append(p_name)
 
-                while True:
+                while not self.game_over:
                     if len(self.client_sockets) == 2 and pid is None:
                         self._notify_client(client_socket, p_name)
                         self.logger.info(f"Game is starting for {p_name}.")
@@ -96,14 +100,52 @@ class GameAdmin:
 
                 elif msg["type"] == "move":
                     if self._valid_move(self.client_sockets[pid], msg):
-                        self._update_board(msg, self.client_sockets[pid])
+                        game_status = self._update_board(msg, self.client_sockets[pid])
                         self.current_turn = "X" if self.current_turn == "O" else "O"
                         self._send_validation_move(pid, desc="Good one!", s_code=200)
                         current_turn = False
+                        if game_status == consts.WINNER_X\
+                                or game_status == consts.WINNER_O\
+                                or game_status == consts.TIE:
+                            self._send_gameover(pid, game_status)
+                            self._new_game_init()
+                            break
+
                     else:
                         self._send_validation_move(
-                            pid, desc="You should provide an unoccupied valid entry!", s_code=400
+                            pid,
+                            desc="You should provide an unoccupied valid entry!",
+                            s_code=400
                         )
+
+    def _new_game_init(self):
+        self.game_over = True
+        self.client_sockets = []
+        self.client_addrs = []
+        self.client_names = []
+        self.current_turn = random.choice(["X", "O"])
+        self.ttt = TicTacToe()
+
+    def _send_gameover(self, pid, game_status):
+        if game_status == consts.TIE:
+            self.client_sockets[1].sendall(
+                TicTacToeHTTPCommand().result(
+                    win_info="tie",
+                    ip=self.client_addrs[1][0]))
+            self.client_sockets[0].sendall(
+                TicTacToeHTTPCommand().result(
+                    win_info="tie",
+                    ip=self.client_addrs[0][0]))
+        else:
+            loser_id = 1 if pid == 0 else 0
+            self.client_sockets[pid].sendall(
+                TicTacToeHTTPCommand().result(
+                    win_info="win",
+                    ip=self.client_addrs[pid][0]))
+            self.client_sockets[loser_id].sendall(
+                TicTacToeHTTPCommand().result(
+                    win_info="lost",
+                    ip=self.client_addrs[loser_id][0]))
 
     def _send_validation_move(self, pid, desc, s_code=200):
         client_socket = self.client_sockets[pid]
@@ -147,8 +189,9 @@ class GameAdmin:
     def _update_board(self, msg, client_socket):
         _, sym = self._get_ip_and_sym(client_socket)
         row, col = int(msg["row"]), int(msg["col"])
-        self.ttt.update_board(sym, (row, col))
+        game_status = self.ttt.update_board(sym, (row, col))
         print(self.ttt)
+        return game_status
 
     @staticmethod
     def _receive_command(client_socket):
@@ -206,17 +249,20 @@ class TicTacToe:
             status = consts.VALID_MOVE
         else:
             status = consts.INVALID_MOVE
-
-        if self._get_winner():
-            winner = self._get_winner()
+        winner = self._get_winner()
+        if winner:
             if winner == "X":
                 status = consts.WINNER_X
             elif winner == "O":
                 status = consts.WINNER_O
-
+            elif winner == consts.TIE:
+                status = consts.TIE
         return status
 
     def _get_winner(self):
+        if self._is_full():
+            return consts.TIE
+
         winner = None
         winner_count = 0
         for cond in self.win_conds:
@@ -236,6 +282,10 @@ class TicTacToe:
             raise ValueError("Conflict in X and O positions")
 
         return winner
+
+    def _is_full(self):
+        flattened = sum(self.board, [])
+        return not ("-" in flattened)
 
     def validate_move(self, move):
         valid = True
