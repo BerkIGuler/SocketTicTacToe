@@ -13,7 +13,6 @@ import threading
 
 
 class GameAdmin:
-    game_over = False
 
     def __init__(self, tcp_config, logger):
         self.logger = logger
@@ -34,9 +33,6 @@ class GameAdmin:
         while True:
             client_socket, client_addr = self.socket.accept()
             self.logger.info(f"New connection from {client_addr}")
-
-            if self.game_over:
-                self.game_over = False
 
             # Start a new thread to handle the client
             client_thread = threading.Thread(target=self.handle_client, args=(client_socket, client_addr))
@@ -61,7 +57,7 @@ class GameAdmin:
                 self.client_addrs.append(client_addr)
                 self.client_names.append(p_name)
 
-                while not self.game_over:
+                while True:
                     if len(self.client_sockets) == 2 and pid is None:
                         self._notify_client(client_socket, p_name)
                         self.logger.info(f"Game is starting for {p_name}.")
@@ -88,28 +84,29 @@ class GameAdmin:
                 self._send_turn(pid=1, your_turn=True)
                 self._send_turn(pid=0, your_turn=False)
 
+            p_name = self.client_names[pid]
             current_turn = True
             while current_turn:
-                p_name = self.client_names[pid]
                 self.logger.info(f"Waiting for {p_name}'s move...")
                 msg = self._receive_command(self.client_sockets[pid])
                 msg = HTTPParser(msg).get_json_content()
 
                 if msg["type"] == "status":
+                    # client wants game status
                     self._send_turn(pid=pid, your_turn=True)
 
                 elif msg["type"] == "move":
                     if self._valid_move(self.client_sockets[pid], msg):
                         game_status = self._update_board(msg, self.client_sockets[pid])
                         self.current_turn = "X" if self.current_turn == "O" else "O"
-                        self._send_validation_move(pid, desc="Good one!", s_code=200)
-                        current_turn = False
                         if game_status == consts.WINNER_X\
                                 or game_status == consts.WINNER_O\
                                 or game_status == consts.TIE:
                             self._send_gameover(pid, game_status)
                             self._new_game_init()
                             break
+                        self._send_validation_move(pid, desc="Good one!", s_code=200)
+                        current_turn = False
 
                     else:
                         self._send_validation_move(
@@ -119,12 +116,12 @@ class GameAdmin:
                         )
 
     def _new_game_init(self):
-        self.game_over = True
-        self.client_sockets = []
-        self.client_addrs = []
-        self.client_names = []
-        self.current_turn = random.choice(["X", "O"])
-        self.ttt = TicTacToe()
+        pass
+        # self.client_sockets = []
+        # self.client_addrs = []
+        # self.client_names = []
+        # self.current_turn = random.choice(["X", "O"])
+        # self.ttt = TicTacToe()
 
     def _send_gameover(self, pid, game_status):
         if game_status == consts.TIE:
