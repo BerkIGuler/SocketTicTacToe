@@ -10,9 +10,9 @@ from logger import get_module_logger
 from TicTacToeServer import TicTacToe
 
 
-class Player:
+class TTTClient:
     def __init__(self, name, logger, tcp_cfg):
-        """connect to the ttt server"""
+        """A client class to playe TTT on TTTServer"""
         self.p_id = None
         self.p_sym = None
         self.logger = logger
@@ -22,6 +22,7 @@ class Player:
         self.board = None
 
     def join(self):
+        """Sends join request and waits for symbol and id assignment"""
         try:
             self.socket.connect((self.tcp_cfg.ip, self.tcp_cfg.port))
             self.logger.info(f"{self.name} sent a joining request")
@@ -34,6 +35,7 @@ class Player:
         self._assign_id_and_sym()
 
     def _assign_id_and_sym(self):
+        """assigns id and sym to client"""
         response = self._receive_resp()
         content = HTTPParser(response).get_json_content()
         if content["type"] == "response_join":
@@ -43,6 +45,7 @@ class Player:
         self.logger.info(f"Game starts...")
 
     def play(self):
+        """main loop implementing client-side game logic"""
         other_id = "1" if str(self.p_id) == "0" else "0"
         std_out = ConsoleOutput()
         while True:
@@ -68,6 +71,7 @@ class Player:
                 std_out.print(self.board, f"Player {other_id}'s turn!!")
 
     def _get_turn(self):
+        """requests turn info from server"""
         msg = TicTacToeHTTPCommand().get_turn(
             server_ip=self.tcp_cfg.ip, pid=self.p_id
         )
@@ -86,6 +90,7 @@ class Player:
         return status
 
     def _get_winner(self):
+        """requests winner info from server"""
         msg = TicTacToeHTTPCommand().get_result(
             server_ip=self.tcp_cfg.ip, pid=self.p_id
         )
@@ -104,6 +109,7 @@ class Player:
         return status
 
     def _get_user_input(self):
+        """reads user input from stdin until success"""
         success = False
         vals = None
         while not success:
@@ -121,11 +127,8 @@ class Player:
                     success = False
         return vals
 
-    def _validate_turn(self, msg):
-        assert msg["sym"] == self.p_sym
-        assert int(msg["id"]) == self.p_id
-
     def _send_move(self, row, col):
+        """sends a TTT move to the server and reports status if necessary"""
         message = TicTacToeHTTPCommand().post_move(
             row=row, col=col, pid=self.p_id, server_ip=self.tcp_cfg.ip
         )
@@ -137,6 +140,7 @@ class Player:
             self.logger.error('Unexpected behavior....')
 
     def _receive_resp(self):
+        """receives responses from server"""
         resp = b""
         while True:
             chunk = self.socket.recv(consts.RECV_BYTE_SIZE)
@@ -156,6 +160,6 @@ if __name__ == "__main__":
     port = parse_port()
     update_args(player_config, **{"port": port})
 
-    player_1 = Player(name=sample_name(), logger=logger, tcp_cfg=player_config)
+    player_1 = TTTClient(name=sample_name(), logger=logger, tcp_cfg=player_config)
     player_1.join()
     player_1.play()

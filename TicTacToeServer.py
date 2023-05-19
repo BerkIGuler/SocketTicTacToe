@@ -8,32 +8,34 @@ from config import admin_config, update_args
 from logger import get_module_logger
 from parsers import HTTPParser, parse_port
 from utils import TicTacToeHTTPCommand, ConsoleOutput
+from game_logic import TicTacToe
 
 
-class GameAdmin:
+class TTTServer:
     std_out = ConsoleOutput()
 
-    def __init__(self, tcp_config, logger):
-        self.logger = logger
+    def __init__(self, tcp_config, logger_):
+        """A server class to handle 2 TTTClient via threads"""
+        self.logger = logger_
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.bind((tcp_config.ip, tcp_config.port))
 
         self.client_sockets = []
-        self.client_addrs = []
-
         self.current_turn = random.choice(["X", "O"])
         self.ttt = TicTacToe()
 
     def start_server(self):
+        """starts server IP and PORT in main thread"""
         self.socket.listen()
         self.logger.info("Waiting for two players to start the game...")
         while True:
             client_socket, client_addr = self.socket.accept()
 
-            client_thread = threading.Thread(target=self.handle_client, args=(client_socket, client_addr))
+            client_thread = threading.Thread(target=self.handle_client, args=(client_socket, ))
             client_thread.start()
 
-    def handle_client(self, client_socket, client_addr):
+    def handle_client(self, client_socket):
+        """main driver for each client"""
         pid = None
 
         try:
@@ -47,7 +49,6 @@ class GameAdmin:
                 assert msg["type"] == "post_join", "must receive join request first"
 
                 self.client_sockets.append(client_socket)
-                self.client_addrs.append(client_addr)
 
                 while True:
                     if len(self.client_sockets) == 2 and pid is None:
@@ -55,7 +56,7 @@ class GameAdmin:
                         self.std_out.print("The game is started")
                         pid, _ = self._get_pid_and_sym(client_socket)
                         next_player_id = ["X", "O"].index(self.current_turn)
-                        self.logger.info(f"Waiting for player {next_player_id}'s move")
+                        self.std_out.print(f"Waiting for player {next_player_id}'s move")
 
                     if pid is not None:
                         self._next_round(pid)
@@ -67,6 +68,7 @@ class GameAdmin:
             client_socket.close()
 
     def _next_round(self, pid):
+        """a function to implement the logic of each round"""
         next_player_id = ["X", "O"].index(self.current_turn)
         request = HTTPParser(
             self._receive_command(self.client_sockets[pid])
@@ -109,6 +111,7 @@ class GameAdmin:
         )
 
     def _send_result(self, pid):
+        """sends game result to via client socket"""
         client_socket = self.client_sockets[pid]
         result = self.ttt.get_winner()
         if result == consts.TIE:
@@ -130,6 +133,7 @@ class GameAdmin:
         client_socket.sendall(msg)
 
     def _send_turn(self, pid):
+        """sends current turn's symbol via client socket"""
         client_socket = self.client_sockets[pid]
         client_socket.sendall(TicTacToeHTTPCommand().response_turn(
             turn_info=self.current_turn,
@@ -139,6 +143,7 @@ class GameAdmin:
         ))
 
     def _send_response_move(self, pid, desc, s_code=200):
+        """sends the response of a move message"""
         client_socket = self.client_sockets[pid]
         client_socket.sendall(TicTacToeHTTPCommand().response_move(
             desc=desc,
@@ -146,6 +151,7 @@ class GameAdmin:
         ))
 
     def _notify_client(self, client_socket):
+        """notifies each client of their IDs and symbol at the beginning"""
         p_id, symbol = self._get_pid_and_sym(client_socket)
         http_resp = TicTacToeHTTPCommand().response_join(
             symbol, p_id,
@@ -156,6 +162,7 @@ class GameAdmin:
         client_socket.sendall(http_resp)
 
     def _valid_move(self, pid, msg):
+        """returns True if a move is valid, else False"""
         valid = False
         if int(msg["id"]) == pid:
             row, col = int(msg["row"]), int(msg["col"])
@@ -164,17 +171,20 @@ class GameAdmin:
         return valid
 
     def _get_pid_and_sym(self, client_socket):
+        """return player id and symbol corresponding the given socket"""
         p_id = self.client_sockets.index(client_socket)
         symbol = ["X", "O"][p_id]
         return p_id, symbol
 
     def _update_board(self, msg, pid):
+        """inserts given symbol to requested position"""
         _, sym = self._get_pid_and_sym(self.client_sockets[pid])
         row, col = int(msg["row"]), int(msg["col"])
         _ = self.ttt.update_board(sym, (row, col))
 
     @staticmethod
     def _receive_command(client_socket):
+        """receives bytes over the client until content length is reached"""
         msg = b""
         while True:
             chunk = client_socket.recv(consts.RECV_BYTE_SIZE)
@@ -182,97 +192,6 @@ class GameAdmin:
             if HTTPParser(chunk).check_content_len():
                 break
         return msg
-
-
-class TicTacToe:
-    valid_moves = [(0, 0), (0, 1), (0, 2),
-                   (1, 0), (1, 1), (1, 2),
-                   (2, 0), (2, 1), (2, 2)]
-
-    win_conds = [[(0, 0), (1, 0), (2, 0)],
-                 [(0, 1), (1, 1), (2, 1)],
-                 [(0, 2), (1, 2), (2, 2)],
-                 [(0, 0), (0, 1), (0, 2)],
-                 [(1, 0), (1, 1), (1, 2)],
-                 [(2, 0), (2, 1), (2, 2)],
-                 [(0, 0), (1, 1), (2, 2)],
-                 [(2, 0), (1, 1), (0, 2)]]
-
-    Xs = ["X", "X", "X"]
-    Os = ["O", "O", "O"]
-
-    def __init__(self, board=None):
-        if board:
-            self.board = board
-        else:
-            self.board = [["-", "-", "-"],
-                          ["-", "-", "-"],
-                          ["-", "-", "-"]]
-
-    @classmethod
-    def encode(cls, board):
-        flattened = sum(board, [])
-        encoded_board = ".".join(flattened)
-        return encoded_board
-
-    @classmethod
-    def decode(cls, board):
-        chars = board.split(".")
-        decoded_board = [chars[0:3], chars[3:6], chars[6:]]
-        return cls(decoded_board)
-
-    def update_board(self, sym, pos):
-        if self.validate_move(pos) and sym.upper() in ["X", "O"]:
-            row, col = pos
-            self.board[row][col] = sym.upper()
-        else:
-            raise RuntimeError("Unexpected board state!!")
-
-    def get_winner(self):
-        winner = None
-        winner_count = 0
-        for cond in self.win_conds:
-            values = []
-            for pos in cond:
-                i, j = pos
-                values.append(self.board[i][j])
-
-            if values == self.Xs:
-                winner = consts.WINNER_X
-                winner_count += 1
-            elif values == self.Os:
-                winner = consts.WINNER_O
-                winner_count += 1
-
-        if winner_count > 1:
-            raise ValueError("Conflict in X and O positions")
-
-        if self._is_full() and winner is None:
-            return consts.TIE
-
-        return winner
-
-    def _is_full(self):
-        flattened = sum(self.board, [])
-        return not ("-" in flattened)
-
-    def validate_move(self, move):
-        valid = True
-        row, col = move
-        if move not in self.valid_moves or self.board[row][col] != "-":
-            valid = False
-
-        return valid
-
-    def __repr__(self):
-        ser = sum(self.board, [])
-        formatted = """
-        _____________
-        | {0} | {1} | {2} | 
-        | {3} | {4} | {5} |
-        | {6} | {7} | {8} |
-        """.format(*ser)
-        return formatted
 
 
 if __name__ == "__main__":
@@ -285,5 +204,5 @@ if __name__ == "__main__":
     port = parse_port()
     update_args(admin_config, **{"port": port})
 
-    admin = GameAdmin(tcp_config=admin_config, logger=logger)
+    admin = TTTServer(tcp_config=admin_config, logger_=logger)
     admin.start_server()

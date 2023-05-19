@@ -2,20 +2,24 @@ HTTP_STATUS = {200: "OK", 400: "Bad Request"}
 
 
 class ConsoleOutput:
+    """A class to have fine-grained control over repeated messages in stdout"""
     def __init__(self):
         self.smart_buffer = []
 
     def print(self, *args):
+        """print all non-duplicate args in a new line"""
         for arg in args:
             if arg.__repr__() not in self.smart_buffer:
                 print(arg)
                 self.smart_buffer.append(arg.__repr__())
 
     def flush(self):
+        """empties buffer"""
         self.smart_buffer = []
 
 
 class TicTacToeHTTPCommand:
+    """A class to construct HTTP GET POST and response messages"""
 
     base_http_post = "POST HTTP/1.1\r\n" \
                      + "Host: {ip}\r\n"\
@@ -32,7 +36,7 @@ class TicTacToeHTTPCommand:
                     + "Accept: application/json\r\n\r\n"
 
     def post_join(self, pname, ip):
-        """join post request template to server"""
+        """returns post request template to join a TTT game"""
         body = '{"type": "post_join", "player_name": ' \
                + f'"{pname}"' + '}'
         body = body.encode(encoding="utf-8")
@@ -47,6 +51,7 @@ class TicTacToeHTTPCommand:
         return http_msg
 
     def response_join(self, sym, pid, status_code):
+        """returns response template from a TTT game"""
         body = '{"type": "response_join", "id": ' \
                + str(pid) + ', "sym": ' + f'"{sym}"' + '}'
         body = body.encode(encoding="utf-8")
@@ -63,6 +68,7 @@ class TicTacToeHTTPCommand:
         return http_msg
 
     def get_turn(self, pid, server_ip):
+        """returns a get request template to get turn info from server"""
         body = '{"type": "get_turn", "player_id": ' \
                + f'"{pid}"' + '}'
         body = body.encode(encoding="utf-8")
@@ -77,6 +83,7 @@ class TicTacToeHTTPCommand:
         return http_msg
 
     def response_turn(self, turn_info, pid, board_state, status_code):
+        """returns an HTTP response template sent after turn query"""
         body = '{"type": "response_turn", ' \
                + '"turn": "' + turn_info + '", ' \
                + '"id": "' + str(pid) + '", ' \
@@ -95,6 +102,7 @@ class TicTacToeHTTPCommand:
         return http_msg
 
     def post_move(self, row, col, pid, server_ip):
+        """returns an HTTP POST template for sending move"""
         body = '{"type": "post_move", ' \
                + '"id": "' + str(pid) + '", ' \
                + '"row": "' + str(row) + '", ' \
@@ -111,6 +119,7 @@ class TicTacToeHTTPCommand:
         return http_msg
 
     def response_move(self, desc, status_code):
+        """returns a HTTP response template sent after receiving a move"""
         body = '{"type": "response_move", "desc": "' + desc + '"}'
         body = body.encode(encoding="utf-8")
         body_len = len(body)
@@ -126,6 +135,7 @@ class TicTacToeHTTPCommand:
         return http_msg
 
     def get_result(self, pid, server_ip):
+        """returns an HTTP get template to get game result"""
         body = '{"type": "get_result", "player_id": ' \
                + f'"{pid}"' + '}'
         body = body.encode(encoding="utf-8")
@@ -140,6 +150,7 @@ class TicTacToeHTTPCommand:
         return http_msg
 
     def response_result(self, win_info, status_code):
+        """returns an HTTP response template sent after querying response"""
         body = '{"type": "response_result", ' \
                + '"win_info": "' + str(win_info) + '"}'
         body = body.encode(encoding="utf-8")
@@ -156,6 +167,7 @@ class TicTacToeHTTPCommand:
         return http_msg
 
     def post_leave(self, pid, server_ip):
+        """returns an HTTP post template to leave the game"""
         body = '{"type": "post_leave", "player_id": ' \
                + f'"{pid}"' + '}'
         body = body.encode(encoding="utf-8")
@@ -170,6 +182,7 @@ class TicTacToeHTTPCommand:
         return http_msg
 
     def response_leave(self, pid, status_code):
+        """returns the template response for a leave query"""
         body = '{"type": "response_leave",' \
                + '"id": ' + f'"{pid}"' + '}'
         body = body.encode(encoding="utf-8")
