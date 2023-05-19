@@ -1,18 +1,17 @@
 import logging
 import random
-
-from config import admin_config
 import socket
-import consts
-
-from logger import get_module_logger
-from parsers import HTTPParser
-from utils import TicTacToeHTTPCommand
-
 import threading
+
+import consts
+from config import admin_config, update_args
+from logger import get_module_logger
+from parsers import HTTPParser, parse_port
+from utils import TicTacToeHTTPCommand, ConsoleOutput
 
 
 class GameAdmin:
+    std_out = ConsoleOutput()
 
     def __init__(self, tcp_config, logger):
         self.logger = logger
@@ -21,26 +20,21 @@ class GameAdmin:
 
         self.client_sockets = []
         self.client_addrs = []
-        self.client_names = []
 
         self.current_turn = random.choice(["X", "O"])
         self.ttt = TicTacToe()
 
     def start_server(self):
         self.socket.listen()
-        self.logger.info("Waiting for players to connect...")
-
+        self.logger.info("Waiting for two players to start the game...")
         while True:
             client_socket, client_addr = self.socket.accept()
-            self.logger.info(f"New connection from {client_addr}")
 
-            # Start a new thread to handle the client
             client_thread = threading.Thread(target=self.handle_client, args=(client_socket, client_addr))
             client_thread.start()
 
     def handle_client(self, client_socket, client_addr):
         pid = None
-        sym = None
 
         try:
             if len(self.client_sockets) > 1:
@@ -50,22 +44,21 @@ class GameAdmin:
                 # check join request first
                 command = self._receive_command(client_socket)
                 msg = HTTPParser(command).get_json_content()
-                assert msg["type"] == "join", "must receive join request first"
-                p_name = msg["player_name"]
+                assert msg["type"] == "post_join", "must receive join request first"
 
                 self.client_sockets.append(client_socket)
                 self.client_addrs.append(client_addr)
-                self.client_names.append(p_name)
 
                 while True:
                     if len(self.client_sockets) == 2 and pid is None:
-                        self._notify_client(client_socket, p_name)
-                        self.logger.info(f"Game is starting for {p_name}.")
-                        pid, sym = self._get_ip_and_sym(client_socket)
+                        self._notify_client(client_socket)
+                        self.std_out.print("The game is started")
+                        pid, _ = self._get_pid_and_sym(client_socket)
+                        next_player_id = ["X", "O"].index(self.current_turn)
+                        self.logger.info(f"Waiting for player {next_player_id}'s move")
 
-                    # both players were notified of their symbols and IDs
                     if pid is not None:
-                        self._next_round(pid, sym)
+                        self._next_round(pid)
 
         except Exception as e:
             self.logger.error(f"Error while handling client: {e}")
@@ -73,122 +66,112 @@ class GameAdmin:
         finally:
             client_socket.close()
 
-    def _next_round(self, pid, sym):
-        my_turn = self.current_turn == sym
+    def _next_round(self, pid):
+        next_player_id = ["X", "O"].index(self.current_turn)
+        request = HTTPParser(
+            self._receive_command(self.client_sockets[pid])
+        ).get_json_content()
 
-        if my_turn:
-            if pid == 0:
-                self._send_turn(pid=0, your_turn=True)
-                self._send_turn(pid=1, your_turn=False)
-            elif pid == 1:
-                self._send_turn(pid=1, your_turn=True)
-                self._send_turn(pid=0, your_turn=False)
+        if request["type"] == "get_result":
+            self._send_result(pid)
 
-            p_name = self.client_names[pid]
-            current_turn = True
-            while current_turn:
-                self.logger.info(f"Waiting for {p_name}'s move...")
-                msg = self._receive_command(self.client_sockets[pid])
-                msg = HTTPParser(msg).get_json_content()
+        elif request["type"] == "get_turn":
+            self._send_turn(pid)
 
-                if msg["type"] == "status":
-                    # client wants game status
-                    self._send_turn(pid=pid, your_turn=True)
+        elif request["type"] == "post_move":
+            _, sym = self._get_pid_and_sym(self.client_sockets[pid])
+            row, col = int(request["row"]), int(request["col"])
+            if self._valid_move(pid, request):
+                self.logger.info(f'Received {sym} on ({row}, {col}). It is a legal move.')
+                self._update_board(request, pid)
+                self._send_response_move(
+                    pid, desc="Move is valid",
+                    s_code=200)
+                self.current_turn = "X" if self.current_turn == "O" else "O"
+                next_player_id = ["X", "O"].index(self.current_turn)
+            else:
+                self.logger.info(f'Received {sym} on ({row}, {col}). It is an illegal move.')
+                self._send_response_move(
+                    pid, desc="Invalid move!",
+                    s_code=400)
+            self.logger.info(f"Waiting for player {next_player_id}'s move")
 
-                elif msg["type"] == "move":
-                    if self._valid_move(self.client_sockets[pid], msg):
-                        game_status = self._update_board(msg, self.client_sockets[pid])
-                        self.current_turn = "X" if self.current_turn == "O" else "O"
-                        if game_status == consts.WINNER_X\
-                                or game_status == consts.WINNER_O\
-                                or game_status == consts.TIE:
-                            self._send_gameover(pid, game_status)
-                            self._new_game_init()
-                            break
-                        self._send_validation_move(pid, desc="Good one!", s_code=200)
-                        current_turn = False
+        elif request["type"] == "post_leave":
+            self._send_leave_response(pid)
 
-                    else:
-                        self._send_validation_move(
-                            pid,
-                            desc="You should provide an unoccupied valid entry!",
-                            s_code=400
-                        )
-
-    def _new_game_init(self):
-        pass
-        # self.client_sockets = []
-        # self.client_addrs = []
-        # self.client_names = []
-        # self.current_turn = random.choice(["X", "O"])
-        # self.ttt = TicTacToe()
-
-    def _send_gameover(self, pid, game_status):
-        if game_status == consts.TIE:
-            self.client_sockets[1].sendall(
-                TicTacToeHTTPCommand().result(
-                    win_info="tie",
-                    ip=self.client_addrs[1][0]))
-            self.client_sockets[0].sendall(
-                TicTacToeHTTPCommand().result(
-                    win_info="tie",
-                    ip=self.client_addrs[0][0]))
-        else:
-            loser_id = 1 if pid == 0 else 0
-            self.client_sockets[pid].sendall(
-                TicTacToeHTTPCommand().result(
-                    win_info="win",
-                    ip=self.client_addrs[pid][0]))
-            self.client_sockets[loser_id].sendall(
-                TicTacToeHTTPCommand().result(
-                    win_info="lost",
-                    ip=self.client_addrs[loser_id][0]))
-
-    def _send_validation_move(self, pid, desc, s_code=200):
+    def _send_leave_response(self, pid):
         client_socket = self.client_sockets[pid]
-        client_socket.sendall(TicTacToeHTTPCommand().validate_move(
-            description=desc,
+        client_socket.sendall(
+            TicTacToeHTTPCommand().response_leave(
+                pid=pid,
+                status_code=200
+            )
+        )
+
+    def _send_result(self, pid):
+        client_socket = self.client_sockets[pid]
+        result = self.ttt.get_winner()
+        if result == consts.TIE:
+            msg = TicTacToeHTTPCommand().response_result(
+                win_info="tie", status_code=200
+            )
+        elif result == consts.WINNER_X:
+            msg = TicTacToeHTTPCommand().response_result(
+                win_info="X", status_code=200
+            )
+        elif result == consts.WINNER_O:
+            msg = TicTacToeHTTPCommand().response_result(
+                win_info="O", status_code=200
+            )
+        else:
+            msg = TicTacToeHTTPCommand().response_result(
+                win_info="None", status_code=200
+            )
+        client_socket.sendall(msg)
+
+    def _send_turn(self, pid):
+        client_socket = self.client_sockets[pid]
+        client_socket.sendall(TicTacToeHTTPCommand().response_turn(
+            turn_info=self.current_turn,
+            pid=pid,
+            board_state=TicTacToe.encode(self.ttt.board),
+            status_code=200
+        ))
+
+    def _send_response_move(self, pid, desc, s_code=200):
+        client_socket = self.client_sockets[pid]
+        client_socket.sendall(TicTacToeHTTPCommand().response_move(
+            desc=desc,
             status_code=s_code
         ))
 
-    def _notify_client(self, client_socket, p_name):
-        p_id, symbol = self._get_ip_and_sym(client_socket)
-        http_resp = TicTacToeHTTPCommand().symbol_and_id(symbol, p_id)
-        self.logger.info(f"Assigned ID {p_id} and symbol {symbol} to "
-                         f"{p_name}")
+    def _notify_client(self, client_socket):
+        p_id, symbol = self._get_pid_and_sym(client_socket)
+        http_resp = TicTacToeHTTPCommand().response_join(
+            symbol, p_id,
+            status_code=200
+        )
+        self.logger.info(f"A client is connected, and is "
+                         f"assigned with the symbol {symbol} and ID={p_id}")
         client_socket.sendall(http_resp)
 
-    def _send_turn(self, pid, your_turn=False):
-        client_socket = self.client_sockets[pid]
-        client_addr = self.client_addrs[pid]
-        client_socket.sendall(TicTacToeHTTPCommand().turn(
-            client_addr[0],
-            self._get_ip_and_sym(client_socket)[0],
-            self._get_ip_and_sym(client_socket)[1],
-            board_state=TicTacToe.encode(self.ttt.board),
-            your_turn=your_turn
-        ))
-
-    def _valid_move(self, client_socket, msg):
+    def _valid_move(self, pid, msg):
         valid = False
-        p_id, symbol = self._get_ip_and_sym(client_socket)
-        if msg["type"] == "move" and int(msg["id"]) == p_id:
+        if int(msg["id"]) == pid:
             row, col = int(msg["row"]), int(msg["col"])
             if self.ttt.validate_move((row, col)):
                 valid = True
         return valid
 
-    def _get_ip_and_sym(self, client_socket):
+    def _get_pid_and_sym(self, client_socket):
         p_id = self.client_sockets.index(client_socket)
         symbol = ["X", "O"][p_id]
         return p_id, symbol
 
-    def _update_board(self, msg, client_socket):
-        _, sym = self._get_ip_and_sym(client_socket)
+    def _update_board(self, msg, pid):
+        _, sym = self._get_pid_and_sym(self.client_sockets[pid])
         row, col = int(msg["row"]), int(msg["col"])
-        game_status = self.ttt.update_board(sym, (row, col))
-        print(self.ttt)
-        return game_status
+        _ = self.ttt.update_board(sym, (row, col))
 
     @staticmethod
     def _receive_command(client_socket):
@@ -198,7 +181,6 @@ class GameAdmin:
             msg += chunk
             if HTTPParser(chunk).check_content_len():
                 break
-
         return msg
 
 
@@ -243,23 +225,10 @@ class TicTacToe:
         if self.validate_move(pos) and sym.upper() in ["X", "O"]:
             row, col = pos
             self.board[row][col] = sym.upper()
-            status = consts.VALID_MOVE
         else:
-            status = consts.INVALID_MOVE
-        winner = self._get_winner()
-        if winner:
-            if winner == "X":
-                status = consts.WINNER_X
-            elif winner == "O":
-                status = consts.WINNER_O
-            elif winner == consts.TIE:
-                status = consts.TIE
-        return status
+            raise RuntimeError("Unexpected board state!!")
 
-    def _get_winner(self):
-        if self._is_full():
-            return consts.TIE
-
+    def get_winner(self):
         winner = None
         winner_count = 0
         for cond in self.win_conds:
@@ -269,14 +238,17 @@ class TicTacToe:
                 values.append(self.board[i][j])
 
             if values == self.Xs:
-                winner = "X"
+                winner = consts.WINNER_X
                 winner_count += 1
             elif values == self.Os:
-                winner = "O"
+                winner = consts.WINNER_O
                 winner_count += 1
 
         if winner_count > 1:
             raise ValueError("Conflict in X and O positions")
+
+        if self._is_full() and winner is None:
+            return consts.TIE
 
         return winner
 
@@ -310,8 +282,8 @@ if __name__ == "__main__":
         file_path="logs/server.log"
     )
 
-    # port = parse_port()
-    # update_args(admin_config, **{"port": port})
+    port = parse_port()
+    update_args(admin_config, **{"port": port})
 
     admin = GameAdmin(tcp_config=admin_config, logger=logger)
     admin.start_server()
