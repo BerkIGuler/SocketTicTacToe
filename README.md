@@ -11,6 +11,4 @@
 ```
 
 #### Requirements
-```
-    pip install -r requirements.txt
-```
+- Having Python installed suffices.
