@@ -18,6 +18,7 @@ class Player:
         self.name = name
         self.tcp_cfg = tcp_cfg
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.board = None
 
     def join(self):
         try:
@@ -43,56 +44,63 @@ class Player:
     def play(self):
         other_id = "1" if self.p_id == "0" else "0"
         while True:
-            response = self._receive_symbol()
-            http_parser = HTTPParser(response)
-            content = http_parser.get_json_content()
-            if content["type"] == "your_turn":
-                self._validate_turn(content)
-                print("Turn information: Your Turn!")
-                print("State of the board")
+            result = self._get_winner()
+            if result in ["X", "O", "tie"]:
+                print(f"Game ended with result {result}")
+                break
 
-                board_state = content["board_state"]
-                board = TicTacToe.decode(board_state)
-                print(board)
+            turn = self._get_turn()
+            if turn:
+                print(self.board)
 
+            if turn == self.p_sym:
+                print("Your turn")
                 row, col = self._get_user_input()
-                if col is not None:
+                if col:
                     self._send_move(row, col)
-                else:
-                    assert row == consts.STATUS
-                    self._request_status()
+                elif row == consts.STATUS:
+                    turn = self._get_turn()
+                    print(self.board)
+            else:
+                print(f"Player {other_id}'s turn!!")
 
-            elif content["type"] == "wait_turn":
-                self._validate_turn(content)
-                print(f"Turn information: Player {other_id}'s turn!"
-                      + f" (Wait for player {other_id}'s move)")
-                print("State of the board")
+    def _get_turn(self):
+        msg = TicTacToeHTTPCommand().get_turn(
+            server_ip=self.tcp_cfg.ip, pid=self.p_id
+        )
+        self.socket.sendall(msg)
+        resp = HTTPParser(
+            self._receive_resp()
+        ).get_json_content()
+        assert resp["type"] == "response_turn"
+        if resp["turn"] in ["O", "X"]:
+            status = resp["turn"]
+            self.board = TicTacToe().decode(resp["board_status"])
+        else:
+            self.logger.error("Invalid turn info")
+            status = None
 
-                board_state = content["board_state"]
-                board = TicTacToe.decode(board_state)
-                print(board)
+        return status
 
-            elif content["type"] == "move_status":
-                status_code = http_parser.get_status()
-                desc = content["desc"]
-                if status_code == "400":
-                    print(desc)
-                    row, col = self._get_user_input()
-                    if col is not None:
-                        self._send_move(row, col)
-                    else:
-                        assert row == consts.STATUS
-                        self._request_status()
-                elif status_code != "200":
-                    raise ValueError("Status code must be either 200 OK or 400 Bad Request")
 
-            elif content["type"] == "result":
-                if content["win_info"] == "win":
-                    print("Congratulations... you won!")
-                elif content["win_info"] == "lost":
-                    print("Sorry... you lost!")
-                elif content["win_info"] == "tie":
-                    print("It's a tie!!")
+
+    def _get_winner(self):
+        msg = TicTacToeHTTPCommand().get_result(
+            server_ip=self.tcp_cfg.ip, pid=self.p_id
+        )
+
+        self.socket.sendall(msg)
+        resp = HTTPParser(
+            self._receive_resp()
+        ).get_json_content()
+        assert resp["type"] == "response_result"
+        if resp["win_info"] in ["X", "O", "tie", "None"]:
+            status = resp["win_info"]
+        else:
+            self.logger.error("Invalid win_info")
+            status = None
+
+        return status
 
     def _request_status(self):
         msg = TicTacToeHTTPCommand().status_request(self.tcp_cfg.ip)
@@ -126,7 +134,7 @@ class Player:
         )
         self.socket.sendall(message)
 
-    def _receive_symbol(self):
+    def _receive_resp(self):
         resp = b""
         while True:
             chunk = self.socket.recv(consts.RECV_BYTE_SIZE)

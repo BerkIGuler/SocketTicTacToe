@@ -16,10 +16,10 @@ class TicTacToeHTTPCommand:
                     + "Host: {ip}\r\n" \
                     + "Accept: application/json\r\n\r\n"
 
-    def join_request(self, p_name, ip):
+    def post_join(self, pname, ip):
         """join post request template to server"""
-        body = '{"type": "join", "player_name": ' \
-               + f'"{p_name}"' + '}'
+        body = '{"type": "post_join", "player_name": ' \
+               + f'"{pname}"' + '}'
         body = body.encode(encoding="utf-8")
         body_len = len(body)
 
@@ -27,82 +27,13 @@ class TicTacToeHTTPCommand:
         headers = headers.format(
             **{"ip": ip, "con_len": body_len}
         ).encode(encoding="utf-8")
-        http_request = headers + body
+        http_msg = headers + body
 
-        return http_request
+        return http_msg
 
-    def symbol_and_id(self, sym, p_id):
-        """sym and id response template from server"""
-        body = '{"type": "join", "player_id": ' \
-               + str(p_id) + ', "player_sym": ' + f'"{sym}"' + '}'
-        body = body.encode(encoding="utf-8")
-        body_len = len(body)
-
-        headers = self.base_http_response
-        headers = headers.format(
-            **{"status_code": 200, "status_msg": "OK", "con_len": body_len}
-        ).encode(encoding="utf-8")
-        http_request = headers + body
-
-        return http_request
-
-    def turn(self, ip, id, sym, board_state, your_turn=False):
-        """turn post request from the server"""
-        if your_turn:
-            turn_info = "your_turn"
-        else:
-            turn_info = "wait_turn"
-
-        body = '{"type": "' + turn_info + '", ' \
-               + '"id": "' + str(id) + '", ' \
-               + '"sym": "' + sym + '", ' \
-               + '"board_state": "' + board_state + '"}' \
-
-        body = body.encode(encoding="utf-8")
-        body_len = len(body)
-
-        headers = self.base_http_post
-        headers = headers.format(
-            **{"ip": ip, "con_len": body_len}
-        ).encode(encoding="utf-8")
-        http_request = headers + body
-
-        return http_request
-
-    def move(self, row, col, p_id, ip):
-        """move post request to server"""
-        body = '{"type": "move", ' \
-               + '"id": "' + str(p_id) + '", ' \
-               + '"row": "' + str(row) + '", ' \
-               + '"col": "' + str(col) + '"}'
-        body = body.encode(encoding="utf-8")
-        body_len = len(body)
-
-        headers = self.base_http_post
-        headers = headers.format(
-            **{"ip": ip, "con_len": body_len}
-        ).encode(encoding="utf-8")
-        http_request = headers + body
-
-        return http_request
-
-    def status_request(self, ip):
-        """status post request to server"""
-        body = '{"type": "status"}'
-        body = body.encode(encoding="utf-8")
-        body_len = len(body)
-
-        headers = self.base_http_post
-        headers = headers.format(
-            **{"ip": ip, "con_len": body_len}
-        ).encode(encoding="utf-8")
-        http_request = headers + body
-
-        return http_request
-
-    def validate_move(self, description, status_code):
-        """valid/invalid move response from server"""
-        body = '{"type": "move_status", "desc": "' + description + '"}'
+    def response_join(self, sym, pid, status_code):
+        body = '{"type": "response_join", "id": ' \
+               + str(pid) + ', "sym": ' + f'"{sym}"' + '}'
         body = body.encode(encoding="utf-8")
         body_len = len(body)
 
@@ -112,25 +43,129 @@ class TicTacToeHTTPCommand:
                "status_msg": HTTP_STATUS[status_code],
                "con_len": body_len}
         ).encode(encoding="utf-8")
-        http_request = headers + body
+        http_msg = headers + body
 
-        return http_request
+        return http_msg
 
-    def result(self, win_info, ip):
-        """result post request from the server"""
-        body = '{"type": "result", ' \
-               + '"win_info": "' + str(win_info) + '"}'
+    def get_turn(self, pid, server_ip):
+        body = '{"type": "get_turn", "player_id": ' \
+               + f'"{pid}"' + '}'
+        body = body.encode(encoding="utf-8")
+
+        headers = self.base_http_get
+        headers = headers.format(
+            {"ip": server_ip}
+        ).encode(encoding="utf-8")
+
+        http_msg = headers + body
+
+        return http_msg
+
+    def response_turn(self, turn_info, pid, board_state, status_code):
+        body = '{"type": "response_turn"' \
+               + '"turn": "' + turn_info + '", ' \
+               + '"id": "' + str(pid) + '", ' \
+               + '"board_state": "' + board_state + '"}'
+        body = body.encode(encoding="utf-8")
+        body_len = len(body)
+
+        headers = self.base_http_response
+        headers = headers.format(
+            **{"status_code": status_code,
+               "status_msg": HTTP_STATUS[status_code],
+               "con_len": body_len}
+        ).encode(encoding="utf-8")
+        http_msg = headers + body
+
+        return http_msg
+
+    def post_move(self, row, col, pid, server_ip):
+        body = '{"type": "post_move", ' \
+               + '"id": "' + str(pid) + '", ' \
+               + '"row": "' + str(row) + '", ' \
+               + '"col": "' + str(col) + '"}'
         body = body.encode(encoding="utf-8")
         body_len = len(body)
 
         headers = self.base_http_post
         headers = headers.format(
-            **{"ip": ip, "con_len": body_len}
+            **{"ip": server_ip, "con_len": body_len}
         ).encode(encoding="utf-8")
-        http_request = headers + body
+        http_msg = headers + body
 
-        return http_request
+        return http_msg
 
+    def response_move(self, desc, status_code):
+        body = '{"type": "response_move", "desc": "' + desc + '"}'
+        body = body.encode(encoding="utf-8")
+        body_len = len(body)
 
+        headers = self.base_http_response
+        headers = headers.format(
+            **{"status_code": status_code,
+               "status_msg": HTTP_STATUS[status_code],
+               "con_len": body_len}
+        ).encode(encoding="utf-8")
+        http_msg = headers + body
 
+        return http_msg
 
+    def get_result(self, pid, server_ip):
+        body = '{"type": "get_result", "player_id": ' \
+               + f'"{pid}"' + '}'
+        body = body.encode(encoding="utf-8")
+
+        headers = self.base_http_get
+        headers = headers.format(
+            {"ip": server_ip}
+        ).encode(encoding="utf-8")
+
+        http_msg = headers + body
+
+        return http_msg
+
+    def response_result(self, win_info, status_code):
+        body = '{"type": "response_result", ' \
+               + '"win_info": "' + str(win_info) + '"}'
+        body = body.encode(encoding="utf-8")
+        body_len = len(body)
+
+        headers = self.base_http_response
+        headers = headers.format(
+            **{"status_code": status_code,
+               "status_msg": HTTP_STATUS[status_code],
+               "con_len": body_len}
+        ).encode(encoding="utf-8")
+        http_msg = headers + body
+
+        return http_msg
+
+    def post_leave(self, pid, server_ip):
+        body = '{"type": "post_leave", "player_id": ' \
+               + f'"{pid}"' + '}'
+        body = body.encode(encoding="utf-8")
+        body_len = len(body)
+
+        headers = self.base_http_post
+        headers = headers.format(
+            **{"ip": server_ip, "con_len": body_len}
+        ).encode(encoding="utf-8")
+        http_msg = headers + body
+
+        return http_msg
+
+    def response_leave(self, pid, status_code):
+        body = '{"type": "response_leave",' \
+               + '"id": ' + f'"{pid}"' + '}'
+        body = body.encode(encoding="utf-8")
+        body_len = len(body)
+
+        headers = self.base_http_response
+        headers = headers.format(
+            **{"status_code": status_code,
+               "status_msg": HTTP_STATUS[status_code],
+               "con_len": body_len}
+        ).encode(encoding="utf-8")
+        http_msg = headers + body
+
+        return http_msg
