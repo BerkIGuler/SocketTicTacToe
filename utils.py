@@ -1,6 +1,20 @@
 HTTP_STATUS = {200: "OK", 400: "Bad Request"}
 
 
+class ConsoleOutput:
+    def __init__(self):
+        self.smart_buffer = []
+
+    def print(self, *args):
+        for arg in args:
+            if arg.__repr__() not in self.smart_buffer:
+                print(arg)
+                self.smart_buffer.append(arg.__repr__())
+
+    def flush(self):
+        self.smart_buffer = []
+
+
 class TicTacToeHTTPCommand:
 
     base_http_post = "POST HTTP/1.1\r\n" \
@@ -14,6 +28,7 @@ class TicTacToeHTTPCommand:
 
     base_http_get = "GET / HTTP/1.1\r\n" \
                     + "Host: {ip}\r\n" \
+                    + "Content-Length: {con_len}\r\n"\
                     + "Accept: application/json\r\n\r\n"
 
     def post_join(self, pname, ip):
@@ -54,7 +69,7 @@ class TicTacToeHTTPCommand:
 
         headers = self.base_http_get
         headers = headers.format(
-            {"ip": server_ip}
+            **{"ip": server_ip, "con_len": len(body)}
         ).encode(encoding="utf-8")
 
         http_msg = headers + body
@@ -62,7 +77,7 @@ class TicTacToeHTTPCommand:
         return http_msg
 
     def response_turn(self, turn_info, pid, board_state, status_code):
-        body = '{"type": "response_turn"' \
+        body = '{"type": "response_turn", ' \
                + '"turn": "' + turn_info + '", ' \
                + '"id": "' + str(pid) + '", ' \
                + '"board_state": "' + board_state + '"}'
@@ -117,7 +132,7 @@ class TicTacToeHTTPCommand:
 
         headers = self.base_http_get
         headers = headers.format(
-            {"ip": server_ip}
+            **{"ip": server_ip, "con_len": len(body)}
         ).encode(encoding="utf-8")
 
         http_msg = headers + body

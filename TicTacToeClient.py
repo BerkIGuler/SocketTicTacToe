@@ -1,12 +1,13 @@
 import logging
 import socket
+import time
 
-from parsers import HTTPParser
-from config import player_config, sample_name
-from utils import TicTacToeHTTPCommand
+import consts
+from parsers import HTTPParser, parse_port
+from config import player_config, sample_name, update_args
+from utils import TicTacToeHTTPCommand, ConsoleOutput
 from logger import get_module_logger
 from TicTacToeServer import TicTacToe
-import consts
 
 
 class Player:
@@ -24,8 +25,8 @@ class Player:
         try:
             self.socket.connect((self.tcp_cfg.ip, self.tcp_cfg.port))
             self.logger.info(f"{self.name} sent a joining request")
-            message = TicTacToeHTTPCommand().join_request(
-                p_name=self.name, ip=self.tcp_cfg.ip
+            message = TicTacToeHTTPCommand().post_join(
+                pname=self.name, ip=self.tcp_cfg.ip
             )
             self.socket.sendall(message)
         except Exception as e:
@@ -33,36 +34,38 @@ class Player:
         self._assign_id_and_sym()
 
     def _assign_id_and_sym(self):
-        response = self._receive_symbol()
+        response = self._receive_resp()
         content = HTTPParser(response).get_json_content()
-        if content["type"] == "join":
-            self.p_id = content["player_id"]
-            self.p_sym = content["player_sym"]
+        if content["type"] == "response_join":
+            self.p_id = content["id"]
+            self.p_sym = content["sym"]
         self.logger.info(f"{self.name} joined the game with id {self.p_id} and symbol {self.p_sym}")
         self.logger.info(f"Game starts...")
 
     def play(self):
-        other_id = "1" if self.p_id == "0" else "0"
+        other_id = "1" if str(self.p_id) == "0" else "0"
+        std_out = ConsoleOutput()
         while True:
+            time.sleep(0.5)  # sleep for some time to prevent overload
             result = self._get_winner()
-            if result in ["X", "O", "tie"]:
-                print(f"Game ended with result {result}")
+            if result != "None":
+                if result in ["X", "O"]:
+                    print(f"{result} won!!")
+                elif result == "tie":
+                    print(f"It's a tie!!")
                 break
 
             turn = self._get_turn()
-            if turn:
-                print(self.board)
 
             if turn == self.p_sym:
+                print(self.board)
                 print("Your turn")
                 row, col = self._get_user_input()
-                if col:
+                if col is not None:
                     self._send_move(row, col)
-                elif row == consts.STATUS:
-                    turn = self._get_turn()
-                    print(self.board)
+                std_out.flush()
             else:
-                print(f"Player {other_id}'s turn!!")
+                std_out.print(self.board, f"Player {other_id}'s turn!!")
 
     def _get_turn(self):
         msg = TicTacToeHTTPCommand().get_turn(
@@ -75,14 +78,12 @@ class Player:
         assert resp["type"] == "response_turn"
         if resp["turn"] in ["O", "X"]:
             status = resp["turn"]
-            self.board = TicTacToe().decode(resp["board_status"])
+            self.board = TicTacToe().decode(resp["board_state"])
         else:
             self.logger.error("Invalid turn info")
             status = None
 
         return status
-
-
 
     def _get_winner(self):
         msg = TicTacToeHTTPCommand().get_result(
@@ -101,10 +102,6 @@ class Player:
             status = None
 
         return status
-
-    def _request_status(self):
-        msg = TicTacToeHTTPCommand().status_request(self.tcp_cfg.ip)
-        self.socket.sendall(msg)
 
     def _get_user_input(self):
         success = False
@@ -129,10 +126,15 @@ class Player:
         assert int(msg["id"]) == self.p_id
 
     def _send_move(self, row, col):
-        message = TicTacToeHTTPCommand().move(
-            row=row, col=col, p_id=self.p_id, ip=self.tcp_cfg.ip
+        message = TicTacToeHTTPCommand().post_move(
+            row=row, col=col, pid=self.p_id, server_ip=self.tcp_cfg.ip
         )
         self.socket.sendall(message)
+        status_code = HTTPParser(self._receive_resp()).get_status()
+        if status_code == "400":
+            print("Fill an unoccupied entry within board")
+        elif status_code != "200":
+            self.logger.error('Unexpected behavior....')
 
     def _receive_resp(self):
         resp = b""
@@ -151,8 +153,8 @@ if __name__ == "__main__":
         file_path="./logs/client.log"
     )
 
-    # port = parse_port()
-    # update_args(player_config, **{"port": port})
+    port = parse_port()
+    update_args(player_config, **{"port": port})
 
     player_1 = Player(name=sample_name(), logger=logger, tcp_cfg=player_config)
     player_1.join()
