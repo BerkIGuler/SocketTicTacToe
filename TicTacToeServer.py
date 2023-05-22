@@ -90,6 +90,7 @@ class TTTServer:
             self.client_sockets.remove(client_socket)
             self.ttt = TicTacToe()
             self.current_turn = random.choice(["X", "O"])
+            self.std_out.flush()
             return True
 
         elif request["type"] == "post_move":
