@@ -2,6 +2,7 @@ import logging
 import random
 import socket
 import threading
+import time
 
 import consts
 from config import admin_config, update_args
@@ -59,7 +60,9 @@ class TTTServer:
                         self.std_out.print(f"Waiting for player {next_player_id}'s move")
 
                     if pid is not None:
-                        self._next_round(pid)
+                        game_done = self._next_round(pid, client_socket)
+                        if game_done:
+                            break
 
         except Exception as e:
             self.logger.error(f"Error while handling client: {e}")
@@ -67,7 +70,7 @@ class TTTServer:
         finally:
             client_socket.close()
 
-    def _next_round(self, pid):
+    def _next_round(self, pid, client_socket):
         """a function to implement the logic of each round"""
         next_player_id = ["X", "O"].index(self.current_turn)
         request = HTTPParser(
@@ -79,6 +82,16 @@ class TTTServer:
 
         elif request["type"] == "get_turn":
             self._send_turn(pid)
+
+        elif request["type"] == "post_leave":
+            self._send_leave_response(pid)
+            time.sleep(1)
+            # get ready for next turn
+            self.client_sockets.remove(client_socket)
+            self.ttt = TicTacToe()
+            self.current_turn = random.choice(["X", "O"])
+            self.std_out.flush()
+            return True
 
         elif request["type"] == "post_move":
             _, sym = self._get_pid_and_sym(self.client_sockets[pid])

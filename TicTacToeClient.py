@@ -49,13 +49,14 @@ class TTTClient:
         other_id = "1" if str(self.p_id) == "0" else "0"
         std_out = ConsoleOutput()
         while True:
-            time.sleep(0.5)  # sleep for some time to prevent overload
+            time.sleep(0.25)  # sleep for some time to prevent overload
             result = self._get_winner()
             if result != "None":
                 if result in ["X", "O"]:
                     print(f"{result} won!!")
                 elif result == "tie":
                     print(f"It's a tie!!")
+                self._send_leave()
                 break
 
             turn = self._get_turn()
@@ -138,6 +139,19 @@ class TTTClient:
             print("Fill an unoccupied entry within board")
         elif status_code != "200":
             self.logger.error('Unexpected behavior....')
+
+    def _send_leave(self):
+        """sends a TTT leave request to the server"""
+        message = TicTacToeHTTPCommand().post_leave(
+            pid=self.p_id, server_ip=self.tcp_cfg.ip
+        )
+        self.socket.sendall(message)
+        status_code = HTTPParser(self._receive_resp()).get_status()
+        if status_code == "200":
+            print("Left the game...")
+        else:
+            self.logger.error('Could not leave successfully...')
+
 
     def _receive_resp(self):
         """receives responses from server"""
