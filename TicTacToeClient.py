@@ -48,18 +48,26 @@ class TTTClient:
         """main loop implementing client-side game logic"""
         other_id = "1" if str(self.p_id) == "0" else "0"
         std_out = ConsoleOutput()
+        game_over = False
         while True:
             time.sleep(0.25)  # sleep for some time to prevent overload
             result = self._get_winner()
-            if result != "None":
-                if result in ["X", "O"]:
-                    print(f"{result} won!!")
-                elif result == "tie":
-                    print(f"It's a tie!!")
-                self._send_leave()
-                break
+
+            if result in ["X", "O", "tie"]:
+                game_over = True
 
             turn = self._get_turn()
+
+            if game_over:
+                print(self.board)
+                if result == self.p_sym:
+                    print("Congratulations!!! You won...")
+                elif result == "tie":
+                    print(f"It's a tie!")
+                else:
+                    print("Oops!!! You lost...")
+                self._send_leave()
+                break
 
             if turn == self.p_sym:
                 print(self.board)
