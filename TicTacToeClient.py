@@ -160,7 +160,6 @@ class TTTClient:
         else:
             self.logger.error('Could not leave successfully...')
 
-
     def _receive_resp(self):
         """receives responses from server"""
         resp = b""
